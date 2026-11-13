@@ -1,0 +1,31 @@
+---
+description: Write-side service functions
+globs: backend/**/services.py
+alwaysApply: false
+---
+
+# Services
+
+Functions in `services.py` are named `<entity>_<action>`, take keyword-only arguments, and have type hints. Build the instance, call `full_clean()`, then `save()`. Prefer a function. Use a class only as a namespace for a multi-step flow. Updates go through an update service: set plain fields, then handle side effects. Services may call other services.
+
+```python
+# ❌ BAD — positional arguments, no full_clean, side effect first
+def create_user(email, name):
+    notify_user(email)
+    return User.objects.create(email=email, name=name)
+
+# ✅ GOOD
+def user_create(*, email: str, name: str) -> User:
+    user = User(email=email, name=name)
+    user.full_clean()
+    user.save()
+    return user
+
+
+def user_update(*, user: User, name: str) -> User:
+    user.name = name
+    user.full_clean()
+    user.save(update_fields=["name", "updated_at"])
+    notify_user(user.email)
+    return user
+```

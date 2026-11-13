@@ -1,0 +1,170 @@
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  actions: read
+  pull-requests: write
+  issues: write
+  checks: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: app
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U app -d app"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://app:app@localhost:5432/app
+      DJANGO_SECRET_KEY: ci-only
+      DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1
+      CORS_ALLOWED_ORIGINS: http://localhost:5173
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.13.8"
+
+      - name: Install dependencies
+        working-directory: backend
+        run: uv sync --frozen
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Restore Allure history
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            branch="${{ github.event.repository.default_branch }}"
+          else
+            branch="${{ github.ref_name }}"
+          fi
+          current="${{ github.run_id }}"
+          run_id="$(gh run list \
+            --workflow tests.yml \
+            --branch "$branch" \
+            --status success \
+            --limit 10 \
+            --json databaseId \
+            --jq "map(select(.databaseId != ${current})) | .[0].databaseId // empty")"
+          if [ -z "$run_id" ]; then
+            echo "No earlier Allure history on ${branch}."
+            exit 0
+          fi
+          rm -rf allure-history-download
+          gh run download "$run_id" --name allure-history --dir allure-history-download
+          found="$(find allure-history-download -name history.jsonl -print -quit)"
+          if [ -z "$found" ]; then
+            echo "History artifact had no history.jsonl."
+            exit 0
+          fi
+          cp "$found" backend/history.jsonl
+          echo "Restored history from run ${run_id}."
+
+      - name: Run tests
+        id: tests
+        continue-on-error: true
+        working-directory: backend
+        run: uv run pytest --alluredir=allure-results --clean-alluredir
+
+      - name: Choose the report URL
+        id: report_url
+        if: always()
+        run: |
+          set -euo pipefail
+          owner="$(printf '%s' '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          repo='${{ github.event.repository.name }}'
+          if [ '${{ github.event_name }}' = 'pull_request' ]; then
+            dir='pr-${{ github.event.pull_request.number }}'
+          else
+            dir='main'
+          fi
+          echo "dir=${dir}" >> "$GITHUB_OUTPUT"
+          echo "href=https://${owner}.github.io/${repo}/${dir}/" >> "$GITHUB_OUTPUT"
+
+      - name: Generate Allure report
+        id: report
+        if: always()
+        continue-on-error: true
+        working-directory: backend
+        env:
+          ALLURE_REPORT_URL: ${{ steps.report_url.outputs.href }}
+        run: npx --yes allure@3.33.0 generate allure-results --clean -o allure-report
+
+      - name: Publish the report
+        if: always() && steps.report.outcome == 'success'
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ github.token }}
+          publish_dir: backend/allure-report
+          destination_dir: ${{ steps.report_url.outputs.dir }}
+          commit_message: Publish Allure report
+
+      - name: Publish Allure summary
+        if: always() && github.event_name == 'pull_request' && steps.report.outcome == 'success'
+        uses: allure-framework/allure-action@v0.12.0
+        with:
+          report-directory: backend/allure-report
+          github-token: ${{ github.token }}
+          remote-href: ${{ steps.report_url.outputs.href }}
+          sections: new
+
+      - name: Upload Allure report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-report
+          path: backend/allure-report
+          if-no-files-found: warn
+
+      - name: Upload Allure history
+        if: >-
+          always()
+          && steps.tests.outcome == 'success'
+          && steps.report.outcome == 'success'
+          && github.event_name == 'push'
+          && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-history
+          path: backend/history.jsonl
+          if-no-files-found: error
+
+      - name: Fail the job when tests or the report failed
+        if: always() && (steps.tests.outcome == 'failure' || steps.report.outcome == 'failure')
+        run: exit 1

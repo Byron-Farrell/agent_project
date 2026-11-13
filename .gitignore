@@ -218,3 +218,14 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Node
+node_modules/
+
+# Local Compose data (bind-mounted Postgres and similar)
+.data/
+
+# Allure
+allure-results/
+allure-report/
+history.jsonl

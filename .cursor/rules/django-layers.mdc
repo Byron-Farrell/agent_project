@@ -1,0 +1,26 @@
+---
+description: Business logic lives in services, selectors, and simple model methods
+globs: backend/**/*.py
+alwaysApply: false
+---
+
+# Layers
+
+Writes go through services. Reads go through selectors. Simple properties and `Model.clean` may hold small checks. Ninja endpoints, schemas, `Model.save`, custom managers, and signals do not hold business logic.
+
+```python
+# ❌ BAD — the endpoint writes the row
+@router.post("/users", response=UserOut)
+def user_create(request, payload: UserIn) -> UserOut:
+    user = User(email=payload.email, name=payload.name)
+    user.save()
+    return user
+
+# ✅ GOOD — the endpoint calls the service
+from apps.users import services
+
+@router.post("/users", response=UserOut)
+def user_create(request, payload: UserIn) -> UserOut:
+    user = services.user_create(email=payload.email, name=payload.name)
+    return user
+```

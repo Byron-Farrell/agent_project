@@ -1,0 +1,27 @@
+---
+description: Django Ninja endpoints and Pydantic schemas
+globs: backend/**/api.py,backend/**/schemas.py
+alwaysApply: false
+---
+
+# API
+
+One Ninja operation per action (list, detail, create, update). Use a dedicated input schema and output schema, and reuse a schema only when the shape is identical. The endpoint validates, calls `services.<entity>_<action>` or `selectors.<entity>_<action>`, and returns the schema. Import the service module so the endpoint name does not shadow the service. Register the router from `backend/config/api.py`.
+
+New domain code lives in `backend/apps/<name>/` as `models.py`, `services.py`, `selectors.py`, `api.py`, and `schemas.py`.
+
+```python
+# ❌ BAD — the import shadows the service, and the endpoint writes
+from apps.users.services import user_create
+
+@router.post("/users", response=UserOut)
+def user_create(request, payload: UserIn) -> UserOut:
+    return User.objects.create(email=payload.email, name=payload.name)
+
+# ✅ GOOD
+from apps.users import services
+
+@router.post("/users", response=UserOut)
+def user_create(request, payload: UserIn) -> UserOut:
+    return services.user_create(email=payload.email, name=payload.name)
+```

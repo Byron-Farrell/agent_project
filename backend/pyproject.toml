@@ -1,0 +1,42 @@
+[project]
+name = "backend"
+version = "0.1.0"
+description = "Django Ninja API for the agent project"
+requires-python = ">=3.12"
+dependencies = [
+    "django>=5.2,<5.3",
+    "django-cors-headers>=4.6",
+    "django-ninja>=1.4",
+    "psycopg[binary]>=3.2",
+]
+
+[dependency-groups]
+dev = [
+    "allure-pytest>=2.16.2",
+    "pytest>=8.3",
+    "pytest-django>=4.9",
+    "ruff>=0.9",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.test"
+pythonpath = ["."]
+python_classes = ["Test*", "*Tests"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+src = [".", "apps", "config"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+"config/settings/local.py" = ["F403"]
+"config/settings/test.py" = ["F403"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["apps", "config"]
