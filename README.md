@@ -30,4 +30,6 @@ docker compose exec frontend npm run lint
 docker compose exec frontend npm run typecheck
 ```
 
-`pytest` runs `backend/apps/health/tests/test_health.py`.
+`pytest` runs the health tests in `backend/apps/health/tests/`.
+
+Pull requests run the same pytest job in GitHub Actions. The job writes an Allure report and comments on the pull request with tests that were added or changed, including each test's steps and the note on what it checks and why. Allure also comments with tests that are new compared with the history saved from the default branch. The HTML report is the `allure-report` artifact on the workflow run.
