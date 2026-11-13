@@ -12,6 +12,8 @@ import json
 import os
 import subprocess
 import textwrap
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -155,15 +157,15 @@ def upsert_comment(body: str) -> None:
         print(body)
         return
 
-    comments = _gh_json(f"repos/{repository}/issues/{number}/comments")
+    comments = _list_comments(repository, number)
     match = next(
         (comment for comment in comments if MARKER in comment.get("body", "")), None
     )
     payload = json.dumps({"body": body})
     if match is None:
-        _gh_input("POST", f"repos/{repository}/issues/{number}/comments", payload)
+        _api("POST", f"repos/{repository}/issues/{number}/comments", payload)
         return
-    _gh_input("PATCH", f"repos/{repository}/issues/comments/{match['id']}", payload)
+    _api("PATCH", f"repos/{repository}/issues/comments/{match['id']}", payload)
 
 
 def main() -> None:
@@ -327,28 +329,54 @@ def _repo_root() -> Path:
     return Path(result.stdout.strip())
 
 
-def _gh_json(endpoint: str) -> list[dict]:
-    result = subprocess.run(
-        ["gh", "api", "--paginate", endpoint],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    if not result.stdout.strip():
-        return []
-    payload = json.loads(result.stdout)
-    if isinstance(payload, list):
-        return payload
-    return []
+def _list_comments(repository: str, number: str) -> list[dict]:
+    comments: list[dict] = []
+    endpoint = f"repos/{repository}/issues/{number}/comments?per_page=100"
+    while endpoint:
+        payload, headers = _api("GET", endpoint)
+        if isinstance(payload, list):
+            comments.extend(payload)
+        endpoint = _next_path(headers)
+    return comments
 
 
-def _gh_input(method: str, endpoint: str, payload: str) -> None:
-    subprocess.run(
-        ["gh", "api", "--method", method, endpoint, "--input", "-"],
-        input=payload,
-        text=True,
-        check=True,
+def _api(method: str, endpoint: str, payload: str | None = None) -> tuple[object, dict]:
+    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or ""
+    if not token:
+        raise SystemExit("Set GH_TOKEN or GITHUB_TOKEN to comment on the pull request.")
+    request = urllib.request.Request(
+        f"https://api.github.com/{endpoint}",
+        data=None if payload is None else payload.encode(),
+        method=method,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "Authorization": f"Bearer {token}",
+            "User-Agent": "pr-test-comment",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
     )
+    try:
+        with urllib.request.urlopen(request) as response:
+            raw = response.read().decode()
+            parsed = json.loads(raw) if raw else None
+            return parsed, dict(response.headers)
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode(errors="replace")
+        raise SystemExit(
+            f"GitHub API {method} {endpoint} failed: {exc.code} {detail}"
+        ) from exc
+
+
+def _next_path(headers: dict) -> str:
+    link = headers.get("Link") or headers.get("link") or ""
+    for part in link.split(","):
+        if 'rel="next"' not in part:
+            continue
+        url = part.split(";", 1)[0].strip().strip("<>")
+        prefix = "https://api.github.com/"
+        if url.startswith(prefix):
+            return url.removeprefix(prefix)
+    return ""
 
 
 if __name__ == "__main__":
