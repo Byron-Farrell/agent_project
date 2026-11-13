@@ -32,4 +32,6 @@ docker compose exec frontend npm run typecheck
 
 `pytest` runs the health tests in `backend/apps/health/tests/`.
 
-Pull requests run the same pytest job in GitHub Actions. The job writes an Allure report and comments on the pull request with tests that were added or changed, including each test's steps and the note on what it checks and why. Allure also comments with tests that are new compared with the history saved from the default branch. The HTML report is the `allure-report` artifact on the workflow run.
+Pull requests run the same pytest job in GitHub Actions. Allure publishes the report to GitHub Pages and comments on the pull request. The summary links to the report, and each new test links to that test in the report, where the steps are shown.
+
+After the first run, open Settings → Pages and set the source to Deploy from a branch, branch `gh-pages`, folder `/ (root)`, if the report link does not load.

@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: write
   actions: read
   pull-requests: write
   issues: write
@@ -102,20 +102,38 @@ jobs:
         working-directory: backend
         run: uv run pytest --alluredir=allure-results --clean-alluredir
 
+      - name: Choose the report URL
+        id: report_url
+        if: always()
+        run: |
+          set -euo pipefail
+          owner="$(printf '%s' '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          repo='${{ github.event.repository.name }}'
+          if [ '${{ github.event_name }}' = 'pull_request' ]; then
+            dir='pr-${{ github.event.pull_request.number }}'
+          else
+            dir='main'
+          fi
+          echo "dir=${dir}" >> "$GITHUB_OUTPUT"
+          echo "href=https://${owner}.github.io/${repo}/${dir}/" >> "$GITHUB_OUTPUT"
+
       - name: Generate Allure report
         id: report
         if: always()
         continue-on-error: true
         working-directory: backend
+        env:
+          ALLURE_REPORT_URL: ${{ steps.report_url.outputs.href }}
         run: npx --yes allure@3.33.0 generate allure-results --clean -o allure-report
 
-      - name: Comment with new and updated tests
-        if: always() && github.event_name == 'pull_request' && steps.report.outcome == 'success'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: python3 backend/scripts/pr_test_comment.py --base "$BASE_SHA" --results backend/allure-results --report backend/allure-report
+      - name: Publish the report
+        if: always() && steps.report.outcome == 'success'
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ github.token }}
+          publish_dir: backend/allure-report
+          destination_dir: ${{ steps.report_url.outputs.dir }}
+          commit_message: Publish Allure report
 
       - name: Publish Allure summary
         if: always() && github.event_name == 'pull_request' && steps.report.outcome == 'success'
@@ -123,6 +141,7 @@ jobs:
         with:
           report-directory: backend/allure-report
           github-token: ${{ github.token }}
+          remote-href: ${{ steps.report_url.outputs.href }}
           sections: new
 
       - name: Upload Allure report
