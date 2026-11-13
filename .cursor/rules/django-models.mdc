@@ -1,0 +1,37 @@
+---
+description: BaseModel timestamps, database constraints, and simple model methods
+globs: backend/**/models.py
+alwaysApply: false
+---
+
+# Models
+
+Concrete models subclass an abstract `BaseModel` with indexed `created_at` (`default=timezone.now`) and `updated_at` (`auto_now=True`). Prefer `Meta.constraints` for rules the database can enforce. Use `clean` only for simple checks on non-relational fields. Properties and methods stay simple and non-relational. Anything that spans relations or does real work is a service or selector.
+
+```python
+# ❌ BAD — a uniqueness rule and a relation query inside clean
+def clean(self):
+    if User.objects.filter(email=self.email).exclude(pk=self.pk).exists():
+        raise ValidationError({"email": "taken"})
+
+# ✅ GOOD
+class BaseModel(models.Model):
+    created_at = models.DateTimeField(db_index=True, default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        abstract = True
+
+
+class User(BaseModel):
+    email = models.EmailField()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["email"], name="unique_user_email"),
+        ]
+
+    def clean(self):
+        if self.email != self.email.lower():
+            raise ValidationError({"email": "must be lowercase"})
+```

@@ -1,0 +1,26 @@
+---
+description: Read-side selector functions
+globs: backend/**/selectors.py
+alwaysApply: false
+---
+
+# Selectors
+
+Functions in `selectors.py` use the same `<entity>_<action>` names, keyword-only arguments, and type hints as services. Selectors only read. List filters are applied inside the selector. The endpoint validates query parameters and passes them in.
+
+```python
+# ❌ BAD — the endpoint filters the queryset
+@router.get("/users", response=list[UserOut])
+def user_list(request, email: str | None = None):
+    qs = User.objects.all()
+    if email:
+        qs = qs.filter(email=email)
+    return qs
+
+# ✅ GOOD
+def user_list(*, email: str | None = None) -> QuerySet[User]:
+    qs = User.objects.all()
+    if email is not None:
+        qs = qs.filter(email=email)
+    return qs
+```

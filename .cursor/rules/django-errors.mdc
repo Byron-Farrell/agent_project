@@ -1,0 +1,27 @@
+---
+description: API errors use one JSON message body
+globs: backend/**/*.py
+alwaysApply: false
+---
+
+# Errors
+
+API errors use one body, `{"message": "..."}`. Client mistakes are 4xx. Unexpected exceptions stay 500. `django.core.exceptions.ValidationError` raised by `full_clean` in a service must become that 400 response. Do not add a Django REST framework exception handler.
+
+```python
+# ❌ BAD — a different body, or letting ValidationError surface as 500
+{"detail": exc.messages}
+
+# ✅ GOOD
+from django.core.exceptions import ValidationError
+
+class ErrorOut(Schema):
+    message: str
+
+@router.post("/users", response={200: UserOut, 400: ErrorOut})
+def user_create(request, payload: UserIn):
+    try:
+        return services.user_create(email=payload.email, name=payload.name)
+    except ValidationError as exc:
+        return 400, ErrorOut(message=exc.messages[0])
+```

@@ -1,0 +1,22 @@
+---
+description: Settings modules and environment variables
+globs: backend/config/settings/**/*.py
+alwaysApply: false
+---
+
+# Settings
+
+Keep the current split in `backend/config/settings/`: `base.py`, `local.py`, and `test.py`. Shared settings live in `base.py`. `local.py` and `test.py` only override. Behavior that should differ in production is an environment variable, not a setting that exists only in a production module. Read values from the environment. Do not commit `.env`. Keep empty keys in `.env.example`. Prefix Django settings variables with `DJANGO_` and stay consistent for other names (`DATABASE_URL`, `CORS_ALLOWED_ORIGINS`).
+
+```python
+# ❌ BAD — a production-only module with a hard-coded secret
+# settings/production.py
+SECRET_KEY = "hard-coded"
+
+# ✅ GOOD — base reads the environment; local only overrides
+# base.py
+SECRET_KEY = require_env("DJANGO_SECRET_KEY")
+
+# local.py
+DEBUG = env_bool("DJANGO_DEBUG", default=False)
+```

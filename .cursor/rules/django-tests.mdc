@@ -1,0 +1,23 @@
+---
+description: Test layout for models, services, and selectors
+globs: backend/**/tests/**/*.py
+alwaysApply: false
+---
+
+# Tests
+
+Mirror the code: `tests/models/test_<model>.py`, `tests/services/test_<service>.py`, `tests/selectors/test_<selector>.py`. Name the class `<Name>Tests`. Model validation tests call `full_clean` and do not need the database. Service tests hit the database and mock anything outside the project. Use factories once `factory_boy` is introduced. Until then, `Model.objects.create` or another service is fine.
+
+```python
+# ❌ BAD — validation is asserted through the database
+class TestUser(TestCase):
+    def test_email(self):
+        User.objects.create(email="Not-Lower@example.com")
+
+# ✅ GOOD
+class UserTests(SimpleTestCase):
+    def test_clean_rejects_mixed_case_email(self):
+        user = User(email="Not-Lower@example.com")
+        with self.assertRaises(ValidationError):
+            user.full_clean()
+```
